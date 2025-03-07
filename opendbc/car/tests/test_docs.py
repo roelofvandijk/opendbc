@@ -2,7 +2,6 @@ from collections import defaultdict
 import pytest
 import re
 
-
 from opendbc.car.docs import get_all_car_docs
 from opendbc.car.docs_definitions import Cable, Column, PartType, Star, SupportType
 from opendbc.car.honda.values import CAR as HONDA

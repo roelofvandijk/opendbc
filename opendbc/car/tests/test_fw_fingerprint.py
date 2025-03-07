@@ -4,7 +4,6 @@ import time
 from collections import defaultdict
 
 from opendbc.car.can_definitions import CanData
-
 from opendbc.car.structs import CarParams
 from opendbc.car.fingerprints import FW_VERSIONS
 from opendbc.car.fw_versions import FW_QUERY_CONFIGS, FUZZY_EXCLUDE_ECUS, VERSIONS, build_fw_dict, \

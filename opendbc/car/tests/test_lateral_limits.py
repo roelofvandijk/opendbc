@@ -5,7 +5,6 @@ import pytest
 import sys
 
 from opendbc.car import DT_CTRL
-
 from opendbc.car.interfaces import get_torque_params
 from opendbc.car.values import PLATFORMS
 
@@ -20,52 +19,59 @@ JERK_MEAS_T = 0.5
 
 @pytest.fixture
 def car_interface_and_params(request, interfaces):
-  car_model = request.param
-  CarInterface, _, _, _ = interfaces[car_model]
-  CP = CarInterface.get_non_essential_params(car_model)
+  return TestLateralLimits.setup(request.param, interfaces)
 
-  if car_model == 'MOCK':
-    pytest.skip('Mock car')
+class TestLateralLimits:
+  @classmethod
+  def setup(cls, car_model, interfaces):
+    cls.car_model = car_model
+    CarInterface, _, _, _ = interfaces[cls.car_model]
+    CP = CarInterface.get_non_essential_params(cls.car_model)
 
-  # TODO: test all platforms
-  if CP.steerControlType != 'torque':
-    pytest.skip()
+    if cls.car_model == 'MOCK':
+      pytest.skip('Mock car')
 
-  if CP.notCar:
-    pytest.skip()
+    # TODO: test all platforms
+    if CP.steerControlType != 'torque':
+      pytest.skip()
 
-  CarControllerParams = importlib.import_module(f'opendbc.car.{CP.brand}.values').CarControllerParams
-  control_params = CarControllerParams(CP)
-  torque_params = get_torque_params()[car_model]
-  return car_model, control_params, torque_params
+    if CP.notCar:
+      pytest.skip()
 
+    CarControllerParams = importlib.import_module(f'opendbc.car.{CP.brand}.values').CarControllerParams
+    cls.control_params = CarControllerParams(CP)
+    cls.torque_params = get_torque_params()[cls.car_model]
+    return cls.car_model, cls.control_params, cls.torque_params
 
-def calculate_0_5s_jerk(control_params, torque_params):
-  steer_step = control_params.STEER_STEP
-  max_lat_accel = torque_params['MAX_LAT_ACCEL_MEASURED']
+  @staticmethod
+  def calculate_0_5s_jerk(control_params, torque_params):
+    steer_step = control_params.STEER_STEP
+    max_lat_accel = torque_params['MAX_LAT_ACCEL_MEASURED']
 
-  # Steer up/down delta per 10ms frame, in percentage of max torque
-  steer_up_per_frame = control_params.STEER_DELTA_UP / control_params.STEER_MAX / steer_step
-  steer_down_per_frame = control_params.STEER_DELTA_DOWN / control_params.STEER_MAX / steer_step
+    # Steer up/down delta per 10ms frame, in percentage of max torque
+    steer_up_per_frame = control_params.STEER_DELTA_UP / control_params.STEER_MAX / steer_step
+    steer_down_per_frame = control_params.STEER_DELTA_DOWN / control_params.STEER_MAX / steer_step
 
-  # Lateral acceleration reached in 0.5 seconds, clipping to max torque
-  accel_up_0_5_sec = min(steer_up_per_frame * JERK_MEAS_T / DT_CTRL, 1.0) * max_lat_accel
-  accel_down_0_5_sec = min(steer_down_per_frame * JERK_MEAS_T / DT_CTRL, 1.0) * max_lat_accel
+    # Lateral acceleration reached in 0.5 seconds, clipping to max torque
+    accel_up_0_5_sec = min(steer_up_per_frame * JERK_MEAS_T / DT_CTRL, 1.0) * max_lat_accel
+    accel_down_0_5_sec = min(steer_down_per_frame * JERK_MEAS_T / DT_CTRL, 1.0) * max_lat_accel
 
-  # Convert to m/s^3
-  return accel_up_0_5_sec / JERK_MEAS_T, accel_down_0_5_sec / JERK_MEAS_T
+    # Convert to m/s^3
+    return accel_up_0_5_sec / JERK_MEAS_T, accel_down_0_5_sec / JERK_MEAS_T
 
-@pytest.mark.parametrize('car_interface_and_params', sorted(PLATFORMS), indirect=True)
-def test_jerk_limits(car_interface_and_params):
-  _, control_params, torque_params = car_interface_and_params
-  up_jerk, down_jerk = calculate_0_5s_jerk(control_params, torque_params)
-  assert up_jerk <= MAX_LAT_JERK_UP + MAX_LAT_JERK_UP_TOLERANCE
-  assert down_jerk <= MAX_LAT_JERK_DOWN
+  @staticmethod
+  @pytest.mark.parametrize('car_interface_and_params', sorted(PLATFORMS), indirect=True)
+  def test_jerk_limits(car_interface_and_params):
+    _, control_params, torque_params = car_interface_and_params
+    up_jerk, down_jerk = TestLateralLimits.calculate_0_5s_jerk(control_params, torque_params)
+    assert up_jerk <= MAX_LAT_JERK_UP + MAX_LAT_JERK_UP_TOLERANCE
+    assert down_jerk <= MAX_LAT_JERK_DOWN
 
-@pytest.mark.parametrize('car_interface_and_params', sorted(PLATFORMS), indirect=True)
-def test_max_lateral_accel(car_interface_and_params):
-  _, _, torque_params = car_interface_and_params
-  assert torque_params["MAX_LAT_ACCEL_MEASURED"] <= MAX_LAT_ACCEL
+  @staticmethod
+  @pytest.mark.parametrize('car_interface_and_params', sorted(PLATFORMS), indirect=True)
+  def test_max_lateral_accel(car_interface_and_params):
+    _, _, torque_params = car_interface_and_params
+    assert torque_params["MAX_LAT_ACCEL_MEASURED"] <= MAX_LAT_ACCEL
 
 
 class LatAccelReport:
@@ -88,7 +94,7 @@ class LatAccelReport:
     yield
     cls = request.cls
     if hasattr(cls, "control_params"):
-      up_jerk, down_jerk = calculate_0_5s_jerk(cls.control_params, cls.torque_params)
+      up_jerk, down_jerk = TestLateralLimits.calculate_0_5s_jerk(cls.control_params, cls.torque_params)
       self.car_model_jerks[cls.car_model] = {"up_jerk": up_jerk, "down_jerk": down_jerk}
 
 
